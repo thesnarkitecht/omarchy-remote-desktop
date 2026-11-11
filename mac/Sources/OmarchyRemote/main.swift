@@ -243,8 +243,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             v.handleKey(e) // swallow everything, including Cmd shortcuts, so they reach Hyprland
             return nil
         }
-        NSApp.activate(ignoringOtherApps: true)
-        prompt()
+        // A modal dialog inside didFinishLaunching blocks launch: the Dock icon bounces forever.
+        DispatchQueue.main.async { self.prompt() }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
@@ -272,6 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         alert.addButton(withTitle: "Quit")
         alert.window.initialFirstResponder = host.stringValue.isEmpty ? host : pass
         host.nextKeyView = user; user.nextKeyView = pass; pass.nextKeyView = host
+        NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return NSApp.terminate(nil) }
         let h = host.stringValue.trimmingCharacters(in: .whitespaces), u = user.stringValue.trimmingCharacters(in: .whitespaces)
         guard !h.isEmpty, !u.isEmpty, !u.hasPrefix("-"), !h.hasPrefix("-"), !(h + u).contains(where: { $0.isWhitespace || $0 == "@" }) else {
