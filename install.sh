@@ -6,7 +6,13 @@ set -euo pipefail
 command -v pacman >/dev/null || { echo "This installer is for Omarchy (Arch Linux)."; exit 1; }
 
 sudo pacman -S --needed --noconfirm wayvnc openssh
-sudo systemctl enable --now sshd
+# The Mac app logs in with your normal username and password.
+sudo mkdir -p /etc/ssh/sshd_config.d
+echo "PasswordAuthentication yes" | sudo tee /etc/ssh/sshd_config.d/10-omarchy-remote.conf >/dev/null
+# sshd uses the first value it sees, so the Include must come before any other setting.
+grep -q '^Include /etc/ssh/sshd_config.d/' /etc/ssh/sshd_config || sudo sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
+sudo systemctl enable sshd
+sudo systemctl restart sshd
 
 # Omarchy's ufw blocks inbound by default: allow SSH from LAN and Tailscale ranges only.
 if command -v ufw >/dev/null && sudo ufw status | grep -q "Status: active"; then
@@ -44,8 +50,10 @@ cat <<MSG
 
 Omarchy Remote is $status.
 
-On your Mac:
-  1. curl -fsSL https://raw.githubusercontent.com/thesnarkitecht/omarchy-remote-desktop/main/install-mac.sh | bash
-  2. ssh-copy-id $USER@${ip:-<this-machine>}      (once; the app uses SSH keys)
-  3. Open Omarchy Remote and connect to: $USER@${ip:-<this-machine>}
+On your Mac, install the app from
+  https://github.com/thesnarkitecht/omarchy-remote-desktop/releases/latest/download/Omarchy-Remote.dmg
+and connect with:
+  Computer: ${ip:-<this-machine-ip>}
+  Username: $USER
+  Password: your Omarchy login password
 MSG

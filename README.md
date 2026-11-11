@@ -12,22 +12,14 @@ On the Omarchy machine:
 curl -fsSL https://raw.githubusercontent.com/thesnarkitecht/omarchy-remote-desktop/main/install.sh | bash
 ```
 
-On the Mac (builds from source; needs Xcode Command Line Tools):
+On the Mac, download **[Omarchy-Remote.dmg](https://github.com/thesnarkitecht/omarchy-remote-desktop/releases/latest/download/Omarchy-Remote.dmg)** (Apple silicon and Intel) and drag the app to Applications. The app isn't notarized, so the first time, right-click it and choose **Open**.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/thesnarkitecht/omarchy-remote-desktop/main/install-mac.sh | bash
-```
-
-Then authorise your Mac's SSH key once and connect to `user@host` in the app:
-
-```bash
-ssh-copy-id you@omarchy-host
-```
+Open it and enter the Omarchy machine's address, your username and your password.
 
 ## How it works
 
-- **Omarchy:** `install.sh` installs `wayvnc` and runs it as a systemd user service bound to `127.0.0.1:5900`, so it is never reachable from the network. It enables `sshd` and, if ufw is on, allows SSH only from LAN and Tailscale ranges.
-- **Mac:** the app opens an SSH tunnel (your keys, your `~/.ssh/config`) and draws the desktop with a small Swift VNC client (`mac/Sources/RFB`).
+- **Omarchy:** `install.sh` installs `wayvnc` and runs it as a systemd user service bound to `127.0.0.1:5900`, so it is never reachable from the network. It enables `sshd` with password login and, if ufw is on, allows SSH only from LAN and Tailscale ranges.
+- **Mac:** the app logs in over SSH with your username and password (everything is encrypted), tunnels to wayvnc, and draws the desktop with a small Swift VNC client (`mac/Sources/RFB`).
 - **Keys:** Cmd is sent as Super, so Hyprland bindings work. While the window is focused, every shortcut goes to Omarchy; use the menu bar or the window's close button to disconnect. macOS keeps Cmd-Tab and Cmd-Space for itself.
 - Clipboard text syncs both ways. The green button gives you full screen.
 

@@ -1,7 +1,13 @@
 // Omarchy Remote: native macOS viewer for an Omarchy (Hyprland) desktop.
-// Connects over an SSH tunnel to wayvnc on the remote's 127.0.0.1:5900.
+// Logs in over SSH with your Omarchy username and password, and tunnels to wayvnc on 127.0.0.1:5900.
 import AppKit
 import RFB
+
+// ssh asks for the password by running this same binary as its SSH_ASKPASS helper.
+if let pw = ProcessInfo.processInfo.environment["OMARCHY_REMOTE_PASSWORD"], CommandLine.arguments.count == 2 {
+    print(pw)
+    exit(0)
+}
 
 // MARK: - SSH tunnel
 
@@ -10,11 +16,16 @@ final class Tunnel {
     let port: Int
     private let stderr = Pipe()
 
-    init(target: String) throws {
+    init(target: String, password: String) throws {
         port = Tunnel.freePort()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        var env = ProcessInfo.processInfo.environment
+        env["SSH_ASKPASS"] = Bundle.main.executablePath
+        env["SSH_ASKPASS_REQUIRE"] = "force"
+        env["OMARCHY_REMOTE_PASSWORD"] = password
+        process.environment = env
         process.arguments = [
-            "-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
+            "-N", "-o", "NumberOfPasswordPrompts=1", "-o", "ExitOnForwardFailure=yes",
             "-o", "ServerAliveInterval=15", "-o", "ConnectTimeout=10",
             "-o", "StrictHostKeyChecking=accept-new",
             "-L", "127.0.0.1:\(port):127.0.0.1:5900", "--", target,
@@ -29,6 +40,7 @@ final class Tunnel {
         while Date() < deadline {
             if !process.isRunning {
                 let msg = String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                if msg.contains("Permission denied") { throw RFBError.connect("wrong username or password") }
                 throw RFBError.connect("ssh exited: \(msg.trimmingCharacters(in: .whitespacesAndNewlines))")
             }
             do {
@@ -232,35 +244,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return nil
         }
         NSApp.activate(ignoringOtherApps: true)
-        prompt(CommandLine.arguments.dropFirst().first { !$0.hasPrefix("-") }) // optional: OmarchyRemote user@host
+        prompt()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ n: Notification) { teardown() }
 
-    func prompt(_ preset: String? = nil, error: String? = nil) {
-        if let preset { return connect(preset) }
+    func prompt(error: String? = nil) {
         let alert = NSAlert()
         alert.messageText = error == nil ? "Connect to Omarchy" : "Connection failed"
-        alert.informativeText = (error.map { $0 + "\n\n" } ?? "") + "SSH destination (uses your SSH keys and ~/.ssh/config):"
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        field.placeholderString = "user@omarchy.local"
-        field.stringValue = UserDefaults.standard.string(forKey: "target") ?? ""
-        alert.accessoryView = field
+        alert.informativeText = error ?? "Your Omarchy login."
+        func field(_ f: NSTextField, _ placeholder: String, _ key: String) -> NSTextField {
+            f.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+            f.placeholderString = placeholder
+            f.stringValue = UserDefaults.standard.string(forKey: key) ?? ""
+            return f
+        }
+        let host = field(NSTextField(), "Computer (e.g. 192.168.1.20)", "host")
+        let user = field(NSTextField(), "Username", "user")
+        let pass = field(NSSecureTextField(), "Password", "-")
+        let stack = NSStackView(views: [host, user, pass])
+        stack.orientation = .vertical
+        stack.spacing = 8
+        stack.frame = NSRect(x: 0, y: 0, width: 260, height: 88)
+        alert.accessoryView = stack
         alert.addButton(withTitle: "Connect")
         alert.addButton(withTitle: "Quit")
-        alert.window.initialFirstResponder = field
+        alert.window.initialFirstResponder = host.stringValue.isEmpty ? host : pass
+        host.nextKeyView = user; user.nextKeyView = pass; pass.nextKeyView = host
         guard alert.runModal() == .alertFirstButtonReturn else { return NSApp.terminate(nil) }
-        let target = field.stringValue.trimmingCharacters(in: .whitespaces)
-        guard !target.isEmpty, !target.hasPrefix("-") else { return prompt(error: "Enter something like user@host.") }
-        UserDefaults.standard.set(target, forKey: "target")
-        connect(target)
+        let h = host.stringValue.trimmingCharacters(in: .whitespaces), u = user.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !h.isEmpty, !u.isEmpty, !u.hasPrefix("-"), !h.hasPrefix("-"), !(h + u).contains(where: { $0.isWhitespace || $0 == "@" }) else {
+            return prompt(error: "Enter the computer's address and your username.")
+        }
+        UserDefaults.standard.set(h, forKey: "host")
+        UserDefaults.standard.set(u, forKey: "user")
+        connect("\(u)@\(h)", password: pass.stringValue)
     }
 
-    func connect(_ target: String) {
+    func connect(_ target: String, password: String) {
         DispatchQueue.global().async {
             do {
-                let tunnel = try Tunnel(target: target)
+                let tunnel = try Tunnel(target: target, password: password)
                 do {
                     let conn = try tunnel.connect()
                     DispatchQueue.main.async { self.open(conn, tunnel, title: target) }
