@@ -1,0 +1,29 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  mac-dmg:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: mac/build-dmg.sh "$PWD/out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Omarchy-Remote-dmg
+          path: out/Omarchy-Remote.dmg
+      - name: Publish to the "latest" release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest >/dev/null 2>&1 || gh release create latest --target main --title "Omarchy Remote" --notes "Mac app built from main."
+          gh release upload latest out/Omarchy-Remote.dmg --clobber
+  lossless-roundtrip:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y xvfb x11vnc imagemagick zlib1g-dev
+      - run: cd mac && swift build --product rfbcheck
+      - run: tests/e2e.sh
+      - run: shellcheck install.sh mac/build-app.sh mac/build-dmg.sh tests/e2e.sh
