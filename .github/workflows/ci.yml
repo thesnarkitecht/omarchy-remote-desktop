@@ -1,0 +1,21 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  mac-app:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: mac/build-app.sh "$PWD/out"
+      - run: cd out && zip -qry "Omarchy-Remote.zip" "Omarchy Remote.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Omarchy-Remote-macOS
+          path: out/Omarchy-Remote.zip
+  lossless-roundtrip:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y xvfb x11vnc imagemagick zlib1g-dev
+      - run: cd mac && swift build --product rfbcheck
+      - run: tests/e2e.sh
+      - run: shellcheck install.sh install-mac.sh mac/build-app.sh tests/e2e.sh
